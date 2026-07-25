@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { X, Mail, Lock, Eye, EyeOff, Loader2, Github } from 'lucide-react';
 import { User, AuthResponse } from '../types';
 
 interface AuthModalProps {
@@ -8,55 +8,89 @@ interface AuthModalProps {
   onAuthSuccess: (data: AuthResponse) => void;
 }
 
-// VITE_BACKEND_URL is set via Vite's env system or defaults to the Express server port
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('innomaweta1@gmail.com'); // Pre-filled with allowed email
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Initialize Google Sign-In
+  useEffect(() => {
+    if (GOOGLE_CLIENT_ID && window.google?.accounts?.id) {
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleSignIn,
+        ux_mode: 'popup',
+      });
+    } else if (!GOOGLE_CLIENT_ID) {
+      console.warn('VITE_GOOGLE_CLIENT_ID not set. Google login disabled.');
+    }
+  }, []);
+
+  const handleGoogleSignIn = async (response: any) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: response.credential })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Google authentication failed');
+      }
+
+      const data: AuthResponse = await res.json();
+      localStorage.setItem('yaza_auth_token', data.token);
+      onAuthSuccess(data);
+    } catch (err: any) {
+      setError(err.message || 'Google authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      // Validate the specific email and password
-      if (email !== 'innomaweta1@gmail.com') {
-        throw new Error('Invalid email. Only innomaweta1@gmail.com is allowed.');
-      }
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const body = isLogin
+        ? { email, password }
+        : { name: `${firstName} ${lastName}`, email, password };
 
-      if (password !== '123456') {
-        throw new Error('Incorrect password. Access denied.');
-      }
-
-      // Create a mock response since we're validating locally
-      const mockUser: User = {
-        id: 'default-user-id',
-        name: 'Inno Maweta',
-        email: 'innomaweta1@gmail.com',
-        tier: 'personal',
-        gradingCount: 0,
-        gradingLimit: 100,
-        createdAt: new Date().toISOString()
-      };
-
-      // Generate a mock token
-      const mockToken = 'mock-jwt-token-for-innomaweta1@gmail.com';
-
-      // Save to localStorage
-      localStorage.setItem('yaza_auth_token', mockToken);
-
-      // Call the success callback
-      onAuthSuccess({
-        token: mockToken,
-        user: mockUser
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || `${isLogin ? 'Login' : 'Registration'} failed`);
+      }
+
+      const data: AuthResponse = await res.json();
+      localStorage.setItem('yaza_auth_token', data.token);
+      onAuthSuccess(data);
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(err.message || `${isLogin ? 'Login' : 'Registration'} failed`);
     } finally {
       setLoading(false);
     }
@@ -94,98 +128,142 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4">
-            {!isLogin && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">First Name</label>
-                  <input
-                    className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-[12px] text-white focus:border-accent-blue focus:outline-none transition-colors placeholder:text-gray-700"
-                    placeholder="John"
-                    required
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Last Name</label>
-                  <input
-                    className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-[12px] text-white focus:border-accent-blue focus:outline-none transition-colors placeholder:text-gray-700"
-                    placeholder="Doe"
-                    required
-                  />
-                </div>
+          <div className="p-5 flex flex-col gap-4">
+            {/* Google Sign-In Button */}
+            {GOOGLE_CLIENT_ID && (
+              <div id="google-signin-button" className="w-full">
+                <div 
+                  id="g_id_onload"
+                  data-client_id={GOOGLE_CLIENT_ID}
+                  data-callback="handleCredentialResponse"
+                  className="w-full"
+                />
+                <div 
+                  id="g_id_signin" 
+                  data-type="standard" 
+                  data-size="large" 
+                  data-theme="dark" 
+                  data-text="signin" 
+                  data-shape="rectangular" 
+                  data-logo_alignment="left"
+                  className="w-full flex justify-center"
+                />
               </div>
             )}
 
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Email Address</label>
-              <div className="relative">
-                <Mail size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                <input
-                  type="email"
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-[12px] text-white focus:border-accent-blue focus:outline-none transition-colors placeholder:text-gray-700"
-                  placeholder="you@university.edu"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  readOnly // Making it read-only since only one email is allowed
-                />
-              </div>
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-gray-800" />
+              <span className="text-xs text-gray-600">OR</span>
+              <div className="flex-1 h-px bg-gray-800" />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Password</label>
-              <div className="relative">
-                <Lock size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-9 py-2 text-[12px] text-white focus:border-accent-blue focus:outline-none transition-colors placeholder:text-gray-700"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+            <form onSubmit={handleEmailSubmit} className="flex flex-col gap-4">
+              {!isLogin && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">First Name</label>
+                    <input
+                      type="text"
+                      className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-[12px] text-white focus:border-accent-blue focus:outline-none transition-colors placeholder:text-gray-700"
+                      placeholder="John"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Last Name</label>
+                    <input
+                      type="text"
+                      className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-[12px] text-white focus:border-accent-blue focus:outline-none transition-colors placeholder:text-gray-700"
+                      placeholder="Doe"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Email Address</label>
+                <div className="relative">
+                  <Mail size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                  <input
+                    type="email"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-[12px] text-white focus:border-accent-blue focus:outline-none transition-colors placeholder:text-gray-700"
+                    placeholder="you@university.edu"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Password</label>
+                <div className="relative">
+                  <Lock size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-9 py-2 text-[12px] text-white focus:border-accent-blue focus:outline-none transition-colors placeholder:text-gray-700"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  >
+                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                  <p className="text-[11px] text-red-400">{error}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-accent-blue text-white text-[12px] font-bold rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? <Loader2 className="animate-spin" size={14} /> : null}
+                {isLogin ? 'Sign In' : 'Create Account'} &nbsp;→
+              </button>
+
+              <div className="text-center pt-1">
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  onClick={() => {
+                    setIsLogin(!isLogin);
+                    setError('');
+                  }}
+                  className="text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
                 >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
                 </button>
               </div>
-            </div>
-
-            {error && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="12"></line>
-                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-                <p className="text-[11px] text-red-400">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-accent-blue text-white text-[12px] font-bold rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-accent-blue/20"
-            >
-              {loading ? <Loader2 className="animate-spin" size={14} /> : null}
-              {isLogin ? 'Sign In' : 'Create Account'} &nbsp;→
-            </button>
-
-            <div className="text-center pt-1">
-              <button
-                type="button"
-                onClick={() => setIsLogin(!isLogin)}
-                className="text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
-              >
-                {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </motion.div>
       </motion.div>
+
+      {/* Load Google Sign-In script */}
+      {GOOGLE_CLIENT_ID && (
+        <script src="https://accounts.google.com/gsi/client" async defer></script>
+      )}
     </AnimatePresence>
   );
 };

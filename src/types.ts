@@ -68,6 +68,7 @@ export interface User {
     gradingLimit: number;
     apiKey?: string;
     apiProvider?: 'openai' | 'gemini';
+    googleId?: string;
     createdAt: string;
 }
 

@@ -5,10 +5,34 @@ import { GoogleGenAI } from '@google/genai';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
+import axios from 'axios';
+import { connectDB } from './db/connect.js';
+import { User, GradingHistory } from './db/models.js';
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(cors());
+
+// Connect to MongoDB on startup
+(async () => {
+    try {
+        await connectDB();
+    } catch (error) {
+        console.error('Failed to connect to MongoDB on startup:', error.message);
+        // Continue anyway - will attempt to connect on first request
+    }
+})();
+
+// Ensure DB connection before each request
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+    } catch (error) {
+        console.error('DB connection error:', error.message);
+        return res.status(500).json({ code: 'DB_CONNECT_ERROR', message: 'Database connection failed' });
+    }
+    next();
+});
 
 // JWT_SECRET must be set in production for security
 if (!process.env.JWT_SECRET) {
@@ -53,29 +77,7 @@ if (GEMINI_KEY) {
     console.warn('WARNING: No API key found. Set GEMINI_API_KEY or OPENAI_API_KEY in .env file.');
 }
 
-// In-memory user storage (for Vercel serverless, use a database in production)
-// This simple version uses an in-memory object that persists per function instance
-let usersCache = null;
-let usersCacheTime = 0;
-const USERS_CACHE_TTL = 60000; // 1 minute
-
-function loadUsers() {
-    // In production on Vercel, use a database like MongoDB, Postgres, or KV storage
-    // For this demo, we use in-memory storage (won't persist across function cold starts)
-    if (usersCache && Date.now() - usersCacheTime < USERS_CACHE_TTL) {
-        return usersCache;
-    }
-    // Initialize with default data
-    const defaultUsers = {};
-    usersCache = defaultUsers;
-    usersCacheTime = Date.now();
-    return usersCache;
-}
-
-function saveUsers(users) {
-    usersCache = users;
-    usersCacheTime = Date.now();
-}
+// ========== Authentication Middleware ==========
 
 function authMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;
@@ -85,10 +87,7 @@ function authMiddleware(req, res, next) {
     try {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
-        const users = loadUsers();
-        const user = users[decoded.email];
-        if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
-        req.user = user;
+        req.user = decoded; // Contains { email, id }
         next();
     } catch {
         return res.status(401).json({ code: 'INVALID_TOKEN', message: 'Invalid token' });
@@ -97,6 +96,55 @@ function authMiddleware(req, res, next) {
 
 // ========== Auth Endpoints ==========
 
+// Google OAuth Callback Handler
+app.post('/api/auth/google', async (req, res) => {
+    try {
+        const { idToken } = req.body;
+        if (!idToken) {
+            return res.status(400).json({ code: 'MISSING_TOKEN', message: 'ID token is required' });
+        }
+
+        // Verify the token with Google
+        const ticket = await verifyGoogleToken(idToken);
+        const payload = ticket.getPayload();
+        const { email, name, picture, sub: googleId } = payload;
+
+        if (!email) {
+            return res.status(400).json({ code: 'INVALID_EMAIL', message: 'Email not provided by Google' });
+        }
+
+        // Find or create user
+        let user = await User.findOne({ email });
+
+        if (!user) {
+            // Create new user
+            user = new User({
+                email,
+                name: name || email.split('@')[0],
+                googleId,
+                tier: 'free',
+                gradingCount: 0,
+                gradingLimit: 5
+            });
+            await user.save();
+        } else if (!user.googleId) {
+            // Link Google account to existing user
+            user.googleId = googleId;
+            await user.save();
+        }
+
+        // Generate JWT token
+        const token = jwt.sign({ email: user.email, id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+
+        const { password: _, ...safeUser } = user.toObject();
+        res.json({ token, user: safeUser });
+    } catch (error) {
+        console.error('Google auth error:', error);
+        res.status(401).json({ code: 'GOOGLE_AUTH_FAILED', message: 'Google authentication failed' });
+    }
+});
+
+// Email/Password Registration
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
@@ -110,30 +158,25 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ code: 'INVALID_EMAIL', message: 'Please provide a valid email address' });
         }
 
-        const users = loadUsers();
-        if (users[email]) {
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
             return res.status(409).json({ code: 'EMAIL_EXISTS', message: 'Email already registered' });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = {
-            id: Date.now().toString(),
-            name,
+        const newUser = new User({
             email,
+            name,
             password: hashedPassword,
             tier: 'free',
             gradingCount: 0,
-            gradingLimit: 5,
-            apiKey: null,
-            apiProvider: null,
-            createdAt: new Date().toISOString(),
-        };
+            gradingLimit: 5
+        });
 
-        users[email] = newUser;
-        saveUsers(users);
+        await newUser.save();
 
-        const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
-        const { password: _, ...safeUser } = newUser;
+        const token = jwt.sign({ email: newUser.email, id: newUser._id }, JWT_SECRET, { expiresIn: '30d' });
+        const { password: _, ...safeUser } = newUser.toObject();
         res.json({ token, user: safeUser });
     } catch (error) {
         console.error('Register error:', error);
@@ -141,6 +184,7 @@ app.post('/api/auth/register', async (req, res) => {
     }
 });
 
+// Email/Password Login
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -148,9 +192,8 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ code: 'MISSING_CREDENTIALS', message: 'Email and password are required' });
         }
 
-        const users = loadUsers();
-        const user = users[email];
-        if (!user) {
+        const user = await User.findOne({ email });
+        if (!user || !user.password) {
             return res.status(401).json({ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' });
         }
 
@@ -159,8 +202,8 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' });
         }
 
-        const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
-        const { password: _, ...safeUser } = user;
+        const token = jwt.sign({ email: user.email, id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+        const { password: _, ...safeUser } = user.toObject();
         res.json({ token, user: safeUser });
     } catch (error) {
         console.error('Login error:', error);
@@ -168,11 +211,22 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-app.get('/api/auth/me', authMiddleware, (req, res) => {
-    const { password: _, ...safeUser } = req.user;
-    res.json({ user: safeUser });
+// Get Current User
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+        }
+        const { password: _, ...safeUser } = user.toObject();
+        res.json({ user: safeUser });
+    } catch (error) {
+        console.error('Get user error:', error);
+        res.status(500).json({ message: 'Failed to get user' });
+    }
 });
 
+// Logout
 app.post('/api/auth/logout', (_req, res) => {
     res.json({ message: 'Logged out' });
 });
@@ -182,8 +236,11 @@ app.post('/api/auth/logout', (_req, res) => {
 app.post('/api/settings/api-keys', authMiddleware, async (req, res) => {
     try {
         const { openaiKey, geminiKey } = req.body;
-        const users = loadUsers();
-        const user = users[req.user.email];
+        const user = await User.findById(req.user.id);
+
+        if (!user) {
+            return res.status(404).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+        }
 
         if (openaiKey) {
             user.apiKey = openaiKey;
@@ -193,8 +250,8 @@ app.post('/api/settings/api-keys', authMiddleware, async (req, res) => {
             user.apiProvider = 'gemini';
         }
 
-        saveUsers(users);
-        const { password: _, ...safeUser } = user;
+        await user.save();
+        const { password: _, ...safeUser } = user.toObject();
         res.json({ message: 'API keys saved', user: safeUser });
     } catch (error) {
         console.error('Save API keys error:', error);
@@ -209,7 +266,13 @@ app.post('/api/grade', authMiddleware, async (req, res) => {
     console.log(`[${requestId}] Starting grading request for ${req.user.email}`);
 
     try {
-        const user = req.user;
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+        }
+
+        // Reset grading count if needed (monthly reset)
+        await user.resetGradingCountIfNeeded();
 
         // Check grading limit for non-corporate users
         if (user.tier !== 'corporate' && user.gradingCount >= user.gradingLimit) {
@@ -238,7 +301,7 @@ app.post('/api/grade', authMiddleware, async (req, res) => {
                 activeModel = 'gemini-2.0-flash';
             }
         } else if (user.tier === 'free' && !user.apiKey) {
-            // Free tier: use server's API key if available, up to 5 gradings/month
+            // Free tier: use server's API key if available, up to limit
             if (!provider) {
                 return res.status(403).json({
                     code: 'NO_API_KEY',
@@ -292,11 +355,22 @@ app.post('/api/grade', authMiddleware, async (req, res) => {
             });
         }
 
-        // Increment grading count
-        const users = loadUsers();
-        if (users[user.email]) {
-            users[user.email].gradingCount = (users[user.email].gradingCount || 0) + 1;
-            saveUsers(users);
+        // Increment grading count and save history
+        user.gradingCount = (user.gradingCount || 0) + 1;
+        await user.save();
+
+        // Save grading history
+        try {
+            const history = new GradingHistory({
+                userId: user._id,
+                studentInfo,
+                result,
+                paperUrl: studentPaper.substring(0, 100) // Store first 100 chars as reference
+            });
+            await history.save();
+        } catch (historyError) {
+            console.warn(`[${requestId}] Failed to save history:`, historyError.message);
+            // Don't fail the grading if history save fails
         }
 
         console.log(`[${requestId}] Grading completed via ${activeProvider}. User: ${user.email}`);
@@ -305,6 +379,43 @@ app.post('/api/grade', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error(`[${requestId}] Grading error:`, error);
         res.status(500).json({ code: 'GRADING_FAILED', error: true, message: error.message || 'Failed to complete grading.' });
+    }
+});
+
+// ========== History Endpoints ==========
+
+app.get('/api/history', authMiddleware, async (req, res) => {
+    try {
+        const history = await GradingHistory.find({ userId: req.user.id })
+            .sort({ createdAt: -1 })
+            .limit(100);
+
+        res.json({ history });
+    } catch (error) {
+        console.error('Get history error:', error);
+        res.status(500).json({ message: 'Failed to fetch history' });
+    }
+});
+
+app.post('/api/history/:id/remarks', authMiddleware, async (req, res) => {
+    try {
+        const { remarks } = req.body;
+        const history = await GradingHistory.findById(req.params.id);
+
+        if (!history) {
+            return res.status(404).json({ message: 'Record not found' });
+        }
+
+        if (history.userId.toString() !== req.user.id.toString()) {
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
+
+        history.remarks = remarks;
+        await history.save();
+        res.json({ message: 'Remarks saved', history });
+    } catch (error) {
+        console.error('Save remarks error:', error);
+        res.status(500).json({ message: 'Failed to save remarks' });
     }
 });
 
@@ -338,7 +449,7 @@ Student Metadata (may be incomplete — extract from the paper if missing):
 - Exam Date: ${studentInfo?.examDate || 'Unknown'}
 
 Instructions:
-1. ${hasScheme ? 'Study the marking scheme carefully to understand all questions and their maximum marks.' : 'Identify all questions from the student paper and estimate appropriate marks for each.'}
+1. ${hasScheme ? 'Study the marking scheme carefully to understand all questions and their maximum marks.' : 'Identify all questions from the student paper and estimate appropriate marks for each'}
 2. Examine the student paper and evaluate each answer.
 3. Assign a score per question and provide brief, constructive feedback for each.
 4. Compute the total score and assign a letter grade (A+, A, B+, B, C+, C, D, or F).
@@ -395,6 +506,25 @@ async function gradeWithGemini(prompt, cleanScheme, schemeMime, cleanPaper, pape
         config: { responseMimeType: 'application/json' }
     });
     return JSON.parse(response.text);
+}
+
+// Verify Google ID Token
+async function verifyGoogleToken(idToken) {
+    try {
+        const response = await axios.get(
+            `https://www.googleapis.com/oauth2/v1/tokeninfo?id_token=${idToken}`
+        );
+        return {
+            getPayload: () => ({
+                email: response.data.email,
+                name: response.data.name,
+                picture: response.data.picture,
+                sub: response.data.user_id
+            })
+        };
+    } catch (error) {
+        throw new Error('Invalid Google token');
+    }
 }
 
 // Export the Express app as a serverless function for Vercel

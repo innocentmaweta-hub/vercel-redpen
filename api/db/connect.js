@@ -14,7 +14,7 @@ export async function connectDB() {
     }
 
     try {
-        const conn = await mongoose.connect(mongoUri, {
+        await mongoose.connect(mongoUri, {
             serverSelectionTimeoutMS: 10000,
             socketTimeoutMS: 45000,
         });
@@ -23,19 +23,11 @@ export async function connectDB() {
 
         console.log('✅ MongoDB connected successfully');
 
-        return conn;
+        return mongoose.connection;
 
     } catch (error) {
         isConnected = false;
         console.error('❌ MongoDB connection failed:', error.message);
         throw error;
     }
-}
-
-export function getDB() {
-    if (!isConnected) {
-        throw new Error('Database not connected');
-    }
-
-    return mongoose.connection;
 }

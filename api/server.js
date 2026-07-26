@@ -152,8 +152,13 @@ app.post('/api/auth/google', async (req, res) => {
         const { password: _, ...safeUser } = user.toObject();
         res.json({ token, user: safeUser });
     } catch (error) {
-        console.error('Google auth error:', error);
-        res.status(401).json({ code: 'GOOGLE_AUTH_FAILED', message: 'Google authentication failed' });
+        console.error('Google auth error message:', error.message);
+        console.error('Google auth full error:', error);
+
+        res.status(401).json({
+            code: 'GOOGLE_AUTH_FAILED',
+            message: error.message
+        });
     }
 });
 

@@ -27,11 +27,15 @@ app.use(cors());
 app.use(async (req, res, next) => {
     try {
         await connectDB();
+        next();
     } catch (error) {
         console.error('DB connection error:', error.message);
-        return res.status(500).json({ code: 'DB_CONNECT_ERROR', message: 'Database connection failed' });
+
+        return res.status(500).json({
+            code: 'DB_CONNECT_ERROR',
+            message: error.message
+        });
     }
-    next();
 });
 
 // JWT_SECRET must be set in production for security

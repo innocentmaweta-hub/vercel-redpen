@@ -5,9 +5,9 @@ import { GoogleGenAI } from '@google/genai';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
-import axios from 'axios';
 import { connectDB } from './db/connect.js';
 import { User, GradingHistory } from './db/models.js';
+import { OAuth2Client } from 'google-auth-library';
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -42,6 +42,12 @@ if (!process.env.JWT_SECRET) {
     console.warn('IMPORTANT: Never use the fallback secret in production!');
 }
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret-change-in-production';
+
+if (!process.env.GOOGLE_CLIENT_ID) {
+    console.warn('WARNING: GOOGLE_CLIENT_ID is missing.');
+}
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Global request timeout middleware (5 minutes for grading)
 app.use((req, res, next) => {
@@ -100,12 +106,19 @@ function authMiddleware(req, res, next) {
 app.post('/api/auth/google', async (req, res) => {
     try {
         const { idToken } = req.body;
+        
+        console.log(
+            'Google login token received:',
+            idToken ? 'YES' : 'NO'
+        );
+        
         if (!idToken) {
             return res.status(400).json({ code: 'MISSING_TOKEN', message: 'ID token is required' });
         }
 
         // Verify the token with Google
         const ticket = await verifyGoogleToken(idToken);
+        console.log('Google token verified successfully');
         const payload = ticket.getPayload();
         const { email, name, picture, sub: googleId } = payload;
 
@@ -510,21 +523,12 @@ async function gradeWithGemini(prompt, cleanScheme, schemeMime, cleanPaper, pape
 
 // Verify Google ID Token
 async function verifyGoogleToken(idToken) {
-    try {
-        const response = await axios.get(
-            `https://www.googleapis.com/oauth2/v1/tokeninfo?id_token=${idToken}`
-        );
-        return {
-            getPayload: () => ({
-                email: response.data.email,
-                name: response.data.name,
-                picture: response.data.picture,
-                sub: response.data.user_id
-            })
-        };
-    } catch (error) {
-        throw new Error('Invalid Google token');
-    }
+    const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    return ticket;
 }
 
 // Export the Express app as a serverless function for Vercel

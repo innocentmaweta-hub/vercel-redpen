@@ -1,17 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Mail, Lock, Eye, EyeOff, Loader2, Github } from 'lucide-react';
 import { User, AuthResponse } from '../types';
+import { GoogleLogin } from "@react-oauth/google";
 
 interface AuthModalProps {
   onClose?: () => void;
   onAuthSuccess: (data: AuthResponse) => void;
-}
-
-declare global {
-  interface Window {
-    google?: any;
-  }
 }
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -26,43 +21,6 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Initialize Google Sign-In
-  useEffect(() => {
-    if (GOOGLE_CLIENT_ID && window.google?.accounts?.id) {
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleGoogleSignIn,
-        ux_mode: 'popup',
-      });
-    } else if (!GOOGLE_CLIENT_ID) {
-      console.warn('VITE_GOOGLE_CLIENT_ID not set. Google login disabled.');
-    }
-  }, []);
-
-  const handleGoogleSignIn = async (response: any) => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: response.credential })
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || 'Google authentication failed');
-      }
-
-      const data: AuthResponse = await res.json();
-      localStorage.setItem('yaza_auth_token', data.token);
-      onAuthSuccess(data);
-    } catch (err: any) {
-      setError(err.message || 'Google authentication failed');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,26 +88,40 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
 
           <div className="p-5 flex flex-col gap-4">
             {/* Google Sign-In Button */}
-            {GOOGLE_CLIENT_ID && (
-              <div id="google-signin-button" className="w-full">
-                <div 
-                  id="g_id_onload"
-                  data-client_id={GOOGLE_CLIENT_ID}
-                  data-callback="handleCredentialResponse"
-                  className="w-full"
-                />
-                <div 
-                  id="g_id_signin" 
-                  data-type="standard" 
-                  data-size="large" 
-                  data-theme="dark" 
-                  data-text="signin" 
-                  data-shape="rectangular" 
-                  data-logo_alignment="left"
-                  className="w-full flex justify-center"
-                />
-              </div>
-            )}
+            <GoogleLogin
+              onSuccess={async (credentialResponse) => {
+                setLoading(true);
+                setError("");
+
+                try {
+                  const res = await fetch("/api/auth/google", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      idToken: credentialResponse.credential,
+                    }),
+                  });
+
+                  const data = await res.json();
+
+                  if (!res.ok) {
+                    throw new Error(data.message || "Google authentication failed");
+                  }
+
+                  localStorage.setItem("yaza_auth_token", data.token);
+                  onAuthSuccess(data);
+                } catch (err: any) {
+                  setError(err.message || "Google authentication failed");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              onError={() => {
+                setError("Google Sign-In failed");
+              }}
+            />
 
             {/* Divider */}
             <div className="flex items-center gap-3">
@@ -261,9 +233,7 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
       </motion.div>
 
       {/* Load Google Sign-In script */}
-      {GOOGLE_CLIENT_ID && (
-        <script src="https://accounts.google.com/gsi/client" async defer></script>
-      )}
+      
     </AnimatePresence>
   );
 };

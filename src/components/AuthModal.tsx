@@ -25,7 +25,7 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
     setLoading(true);
 
     try {
-      // Direct absolute WordPress API integration path
+      // Direct native WordPress API pathway to bypass 301 canonical redirects
       const baseApi = "https://redpen.empire16.com";
       const endpoint = isLogin ? `${baseApi}/auth/login` : `${baseApi}/auth/register`;
       

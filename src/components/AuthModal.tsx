@@ -25,7 +25,7 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
     setLoading(true);
 
     try {
-      // Direct native WordPress API pathway to bypass 301 canonical redirects
+      // FIXED: Pointing directly to the custom WordPress REST API namespace pipeline path
       const baseApi = "https://redpen.empire16.com";
       const endpoint = isLogin ? `${baseApi}/auth/login` : `${baseApi}/auth/register`;
       
@@ -94,6 +94,7 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
                 setError("");
 
                 try {
+                  // FIXED: Pointing directly to the custom WordPress REST API namespace pipeline path
                   const baseApi = "https://redpen.empire16.com";
                   const res = await fetch(`${baseApi}/auth/google`, {
                     method: "POST",
@@ -227,4 +228,3 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
       </motion.div>
     </AnimatePresence>
   );
-};

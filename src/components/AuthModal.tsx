@@ -25,8 +25,11 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
     setLoading(true);
 
     try {
+      // Direct absolute WordPress API integration path
       const baseApi = "https://redpen.empire16.com";
-      const endpoint = isLogin ? `${baseApi}/auth/login` : `${baseApi}/auth/register`;
+      
+      // FIXED: Added a trailing slash at the end of the endpoint strings
+      const endpoint = isLogin ? `${baseApi}/auth/login/` : `${baseApi}/auth/register/`;
       
       const body = isLogin
         ? { email, password }

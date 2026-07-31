@@ -25,7 +25,6 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
     setLoading(true);
 
     try {
-      // FIXED: Pointing directly to the custom WordPress REST API namespace pipeline path
       const baseApi = "https://redpen.empire16.com";
       const endpoint = isLogin ? `${baseApi}/auth/login` : `${baseApi}/auth/register`;
       
@@ -87,14 +86,12 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
           </div>
 
           <div className="p-5 flex flex-col gap-4">
-            {/* Google Sign-In Button */}
             <GoogleLogin
               onSuccess={async (credentialResponse) => {
                 setLoading(true);
                 setError("");
 
                 try {
-                  // FIXED: Pointing directly to the custom WordPress REST API namespace pipeline path
                   const baseApi = "https://redpen.empire16.com";
                   const res = await fetch(`${baseApi}/auth/google`, {
                     method: "POST",
@@ -125,7 +122,6 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
               }}
             />
 
-            {/* Divider */}
             <div className="flex items-center gap-3">
               <div className="flex-1 h-px bg-gray-800" />
               <span className="text-xs text-gray-600">OR</span>
@@ -228,3 +224,4 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
       </motion.div>
     </AnimatePresence>
   );
+};

@@ -5,7 +5,7 @@
     "rewrites": [
         {
             "source": "/api/(.*)",
-            "destination": "https://empire16.com"
+            "destination": "https://redpen.empire16.com"
         },
         {
             "source": "/(.*)",

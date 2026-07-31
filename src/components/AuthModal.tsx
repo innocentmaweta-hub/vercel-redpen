@@ -22,13 +22,16 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
   const [error, setError] = useState('');
 
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
+    const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+      // FIX: Bypasses Vercel proxy by calling your absolute WordPress API endpoint directly
+      const baseApi = "https://redpen.empire16.com";
+      const endpoint = isLogin ? `${baseApi}/auth/login` : `${baseApi}/auth/register`;
+      
       const body = isLogin
         ? { email, password }
         : { name: `${firstName} ${lastName}`, email, password };
@@ -38,21 +41,6 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || `${isLogin ? 'Login' : 'Registration'} failed`);
-      }
-
-      const data: AuthResponse = await res.json();
-      localStorage.setItem('yaza_auth_token', data.token);
-      onAuthSuccess(data);
-    } catch (err: any) {
-      setError(err.message || `${isLogin ? 'Login' : 'Registration'} failed`);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <AnimatePresence>

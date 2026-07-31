@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Mail, Lock, Eye, EyeOff, Loader2, Github } from 'lucide-react';
-import { User, AuthResponse } from '../types';
+import { X, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { AuthResponse } from '../types';
 import { GoogleLogin } from "@react-oauth/google";
 
 interface AuthModalProps {
   onClose?: () => void;
   onAuthSuccess: (data: AuthResponse) => void;
 }
-
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -21,14 +19,13 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-
-    const handleEmailSubmit = async (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      // FIX: Bypasses Vercel proxy by calling your absolute WordPress API endpoint directly
+      // Direct absolute WordPress API integration path
       const baseApi = "https://redpen.empire16.com";
       const endpoint = isLogin ? `${baseApi}/auth/login` : `${baseApi}/auth/register`;
       
@@ -41,6 +38,21 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || `${isLogin ? 'Login' : 'Registration'} failed`);
+      }
+
+      localStorage.setItem('yaza_auth_token', data.token);
+      onAuthSuccess(data);
+    } catch (err: any) {
+      setError(err.message || `${isLogin ? 'Login' : 'Registration'} failed`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -82,7 +94,8 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
                 setError("");
 
                 try {
-                  const res = await fetch("/api/auth/google", {
+                  const baseApi = "https://redpen.empire16.com";
+                  const res = await fetch(`${baseApi}/auth/google`, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
@@ -117,6 +130,12 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
               <span className="text-xs text-gray-600">OR</span>
               <div className="flex-1 h-px bg-gray-800" />
             </div>
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-400">
+                {error}
+              </div>
+            )}
 
             <form onSubmit={handleEmailSubmit} className="flex flex-col gap-4">
               {!isLogin && (
@@ -176,52 +195,36 @@ export const AuthModal = ({ onClose, onAuthSuccess }: AuthModalProps) => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
                   >
                     {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
               </div>
 
-              {error && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                  </svg>
-                  <p className="text-[11px] text-red-400">{error}</p>
-                </div>
-              )}
-
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-accent-blue text-white text-[12px] font-bold rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-accent-blue hover:bg-accent-blue/90 disabled:bg-accent-blue/50 text-white font-bold text-xs uppercase tracking-wider py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 mt-2"
               >
-                {loading ? <Loader2 className="animate-spin" size={14} /> : null}
-                {isLogin ? 'Sign In' : 'Create Account'} &nbsp;→
+                {loading ? <Loader2 size={14} className="animate-spin" /> : isLogin ? 'Sign In' : 'Create Account'}
               </button>
-
-              <div className="text-center pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsLogin(!isLogin);
-                    setError('');
-                  }}
-                  className="text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
-                >
-                  {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-                </button>
-              </div>
             </form>
+
+            <div className="text-center mt-2">
+              <button
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setError('');
+                }}
+                className="text-[11px] text-gray-500 hover:text-accent-blue transition-colors font-medium"
+              >
+                {isLogin ? "Don't have an account? Create one" : 'Already have an account? Sign In'}
+              </button>
+            </div>
           </div>
         </motion.div>
       </motion.div>
-
-      {/* Load Google Sign-In script */}
-      
     </AnimatePresence>
   );
 };

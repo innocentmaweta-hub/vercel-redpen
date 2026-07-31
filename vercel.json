@@ -5,17 +5,11 @@
     "rewrites": [
         {
             "source": "/api/(.*)",
-            "destination": "/api/server"
+            "destination": "https://redpen.empire16.com"
         },
         {
             "source": "/(.*)",
             "destination": "/index.html"
         }
-    ],
-    "functions": {
-        "api/server.js": {
-            "memory": 512,
-            "maxDuration": 60
-        }
-    }
+    ]
 }

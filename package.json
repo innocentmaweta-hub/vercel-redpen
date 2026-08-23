@@ -14,7 +14,7 @@
         "test": "node --test tests/*.test.js"
     },
     "dependencies": {
-        "@google/genai": "^1.29.0",
+        "@google/genai": "^1.29.0", 
         "@react-oauth/google": "^0.12.1",
         "@tailwindcss/vite": "^4.1.14",
         "@vitejs/plugin-react": "^5.0.4",

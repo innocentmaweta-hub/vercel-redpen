@@ -2723,6 +2723,9 @@ export default function App() {
                                                 info={studentInfo}
                                                 onChange={setStudentInfo}
                                                 courses={courses}
+                                                onNewCourse={() =>
+                                                    setShowNewCourseModal(true)
+                                                }
                                             />
                                         </div>
 

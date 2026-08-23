@@ -6,9 +6,6 @@ import { isFileSystemAccessSupported, pickSaveFolder, getSavedFolder, clearSaveF
 
 interface Props {
     user: User | null;
-    // Kept optional for compatibility with existing App.tsx until its unused
-    // API-key handler is removed from the parent.
-    onSaveApiKeys?: (openai: string, gemini: string) => void;
     onClose: () => void;
     authHeaders: () => Record<string, string>;
 }

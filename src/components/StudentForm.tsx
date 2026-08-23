@@ -6,6 +6,7 @@ interface Props {
   info: StudentInfo;
   onChange: (info: StudentInfo) => void;
   courses: { courseCode: string; courseName: string }[];
+  onNewCourse?: () => void;
 }
 
 const YEARS_OF_STUDY = ['Year 1', 'Year 2', 'Year 3', 'Year 4'];
@@ -23,7 +24,12 @@ function getAcademicYearOptions(): string[] {
 
 const ACADEMIC_YEARS = getAcademicYearOptions();
 
-export const StudentForm = ({ info, onChange, courses }: Props) => {
+export const StudentForm = ({
+  info,
+  onChange,
+  courses,
+  onNewCourse
+}: Props) => {
   const [selectedDepartment, setSelectedDepartment] = useState<string>(() => {
     return localStorage.getItem('lastSelectedDepartment') || '';
   });
@@ -32,9 +38,8 @@ export const StudentForm = ({ info, onChange, courses }: Props) => {
   // Selecting a different course is a deliberate action (unlike a text field's
   // blur, which can fire from clicking anything else — including Grade),
   // so onChange is the only trigger for the confirmation popup.
-  const [pendingCourseCode, setPendingCourseCode] = useState<string | null>(null);
-  const [courseFieldMode, setCourseFieldMode] = useState<'select' | 'custom'>(courses.length > 0 ? 'select' : 'custom');
-  const [customCourseDraft, setCustomCourseDraft] = useState('');
+  const [pendingCourseCode, setPendingCourseCode] =
+    useState<string | null>(null);
 
   // Academic Year / Semester determine which workbook a result is saved into,
   // so a change is held here pending confirmation before being applied.
@@ -179,55 +184,36 @@ export const StudentForm = ({ info, onChange, courses }: Props) => {
 
      {/* Row 4: Course / Exam Date */}
       <div className="grid grid-cols-2 gap-4">
-       {courseFieldMode === 'select' && courses.length > 0 ? (
-          <select
-            className={selectClass}
-            value={info.courseCode || ''}
-            onChange={(e) => {
-              if (e.target.value === '__new__') {
-                setCourseFieldMode('custom');
-                return;
-              }
-              requestCourseChange(e.target.value);
-            }}
-          >
-            <option value="">Course</option>
-            {courses.map((c) => (
-              <option key={c.courseCode} value={c.courseCode}>
-                {c.courseCode}{c.courseName ? ` — ${c.courseName}` : ''}
-              </option>
-            ))}
-            <option value="__new__">+ Add a new course</option>
-          </select>
-        ) : (
-          <div className="flex flex-col gap-1">
-            <input
-              type="text"
-              placeholder="Course"
-              className={inputClass}
-              value={customCourseDraft}
-              onChange={(e) => setCustomCourseDraft(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-            />
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => { requestCourseChange(customCourseDraft); setCustomCourseDraft(''); }}
-                className="text-[10px] text-accent-blue hover:text-accent-blue/80 font-bold"
-              >
-                Set Course
-              </button>
-              {courses.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => { setCourseFieldMode('select'); setCustomCourseDraft(''); }}
-                  className="text-[10px] text-gray-500 hover:text-gray-300 font-bold"
-                >
-                  ← Choose existing
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+        <select
+          className={selectClass}
+          value={info.courseCode || ''}
+          onChange={(e) => {
+            if (e.target.value === '__new__') {
+              onNewCourse?.();
+              return;
+            }
+        
+            requestCourseChange(e.target.value);
+          }}
+        >
+          <option value="">Course</option>
+        
+          {courses.map((c) => (
+            <option
+              key={c.courseCode}
+              value={c.courseCode}
+            >
+              {c.courseCode}
+              {c.courseName
+                ? ` — ${c.courseName}`
+                : ''}
+            </option>
+          ))}
+        
+          <option value="__new__">
+            + Add a new course
+          </option>
+        </select>
         <input
           type="date"
           placeholder="Date of Exams"

@@ -1,0 +1,15 @@
+{
+    "buildCommand": "vite build",
+    "outputDirectory": "dist",
+    "devCommand": "vite --port=5000 --host=0.0.0.0",
+    "rewrites": [
+        {
+            "source": "/api/(.*)",
+            "destination": "/api/server-wordpress.js"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
+        }
+    ]
+}

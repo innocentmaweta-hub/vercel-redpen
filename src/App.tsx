@@ -3545,7 +3545,6 @@ export default function App() {
                     <SettingsModal
                         user={user}
                         onClose={() => setShowSettings(false)}
-                        onSaveApiKeys={handleSaveApiKeys}
                         authHeaders={authHeaders}
                     />
                 )}
